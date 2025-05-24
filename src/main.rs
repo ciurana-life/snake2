@@ -1,21 +1,20 @@
+use core::panic;
 use crossterm::{
-    cursor::{Hide, Show, MoveTo},
+    ExecutableCommand,
+    cursor::{Hide, MoveTo, Show},
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     style::{self, Stylize},
     terminal::{self, Clear, ClearType},
-    ExecutableCommand,
 };
-use core::panic;
+use rand::Rng;
 use std::io::{self, Write};
 use std::time::Duration;
-use rand::Rng;
-
 
 enum SnakeDirection {
     Up,
     Down,
     Left,
-    Right
+    Right,
 }
 
 #[derive(Clone)]
@@ -26,19 +25,28 @@ struct SnakeBodyPoint {
 
 struct Snake {
     direction: SnakeDirection,
-    body: Vec<SnakeBodyPoint>
+    body: Vec<SnakeBodyPoint>,
 }
 
 impl Snake {
     fn new(cols: &u16, rows: &u16, initial_direction: SnakeDirection) -> Self {
         let x = cols / 2;
         let y = rows / 2;
-        let snake_body_point = SnakeBodyPoint{x, y};
-        Snake { direction: initial_direction, body: vec![snake_body_point] }
+        let snake_body_point = SnakeBodyPoint { x, y };
+        Snake {
+            direction: initial_direction,
+            body: vec![snake_body_point],
+        }
     }
-    fn print_body(&mut self, stdout: &mut std::io::Stdout, food_position: Option<(u16, u16)>, cols: &u16, rows: &u16) -> io::Result<Option<(u16, u16)>> {
+    fn print_body(
+        &mut self,
+        stdout: &mut std::io::Stdout,
+        food_position: Option<(u16, u16)>,
+        cols: &u16,
+        rows: &u16,
+    ) -> io::Result<Option<(u16, u16)>> {
         let mut new_head = self.body[0].clone();
-    
+
         match self.direction {
             SnakeDirection::Up => {
                 if new_head.y == 0 {
@@ -46,45 +54,48 @@ impl Snake {
                 } else {
                     new_head.y -= 1;
                 }
-            },
+            }
             SnakeDirection::Down => {
                 new_head.y = (new_head.y + 1) % *rows;
-            },
+            }
             SnakeDirection::Left => {
                 if new_head.x == 0 {
                     new_head.x = *cols - 1;
                 } else {
                     new_head.x -= 1;
                 }
-            },
+            }
             SnakeDirection::Right => {
                 new_head.x = (new_head.x + 1) % *cols;
-            },
+            }
         }
-        
 
         // Game over if the new head collides with body
-        if self.body.iter().any(|segment| segment.x == new_head.x && segment.y == new_head.y) {
+        if self
+            .body
+            .iter()
+            .any(|segment| segment.x == new_head.x && segment.y == new_head.y)
+        {
             println!("\n\n\tGame Over! You hit yourself.\n\n");
             disable_game_mode(stdout)?;
             std::process::exit(0)
         }
-    
+
         // Shift the body
         self.body.insert(0, new_head.clone());
-    
+
         let mut grew = false;
-    
+
         if let Some(fp) = food_position {
             if new_head.x == fp.0 && new_head.y == fp.1 {
                 grew = true;
             }
         }
-    
+
         if !grew {
             self.body.pop(); // Remove the tail unless food was eaten
         }
-    
+
         // Render snake
         for i in 0..self.body.len() {
             let current = &self.body[i];
@@ -103,28 +114,29 @@ impl Snake {
                     '|'
                 } else if current.y == prev.y {
                     '-'
-                } else { 's'}
+                } else {
+                    's'
+                }
             };
-        
-            stdout.execute(MoveTo(current.x, current.y))?
-                  .execute(style::PrintStyledContent(ch.green()))?;
+
+            stdout
+                .execute(MoveTo(current.x, current.y))?
+                .execute(style::PrintStyledContent(ch.green()))?;
         }
-        
-    
+
         if grew {
             Ok(generate_food(cols, rows, &self.body))
         } else {
             Ok(food_position)
         }
     }
-    
 }
 
 fn generate_food(cols: &u16, rows: &u16, snake_body: &Vec<SnakeBodyPoint>) -> Option<(u16, u16)> {
     let mut available_positions = Vec::new();
 
     for x in 0..*cols {
-        for y in 0 ..*rows {
+        for y in 0..*rows {
             if !snake_body.iter().any(|p| p.x == x && p.y == y) {
                 available_positions.push((x, y));
             }
@@ -169,14 +181,16 @@ fn main() -> io::Result<()> {
 
         // Draw to the screen
         if arrow_press == false {
-            stdout.execute(MoveTo(0, 0))?
-            .execute(style::PrintStyledContent(start_text.magenta()))?;
+            stdout
+                .execute(MoveTo(0, 0))?
+                .execute(style::PrintStyledContent(start_text.magenta()))?;
         } else if let Some(ref mut s) = snake {
             // Print the snake
-            let new_food_pos: Option<(u16, u16)> = s.print_body(&mut stdout, food_position, &cols, &rows)?;
-            
+            let new_food_pos: Option<(u16, u16)> =
+                s.print_body(&mut stdout, food_position, &cols, &rows)?;
+
             if let Some(nfp) = new_food_pos {
-                if Some(nfp) != food_position && timer > 50{
+                if Some(nfp) != food_position && timer > 50 {
                     timer -= 20;
                 }
                 food_position = Some(nfp);
@@ -184,10 +198,11 @@ fn main() -> io::Result<()> {
                 food_position = None;
             }
 
-            // Print the food 
+            // Print the food
             if let Some(f) = food_position {
-                stdout.execute(MoveTo(f.0, f.1))?
-                .execute(style::PrintStyledContent("o".red()))?;
+                stdout
+                    .execute(MoveTo(f.0, f.1))?
+                    .execute(style::PrintStyledContent("o".red()))?;
             } else {
                 food_position = generate_food(&cols, &rows, &s.body);
             }
@@ -196,7 +211,10 @@ fn main() -> io::Result<()> {
 
         // Handle input
         if event::poll(Duration::from_millis(timer))? {
-            if let Event::Key(KeyEvent { code, modifiers, .. }) = event::read()? {
+            if let Event::Key(KeyEvent {
+                code, modifiers, ..
+            }) = event::read()?
+            {
                 match code {
                     KeyCode::Char('q') => break,
                     KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => break,
@@ -210,7 +228,7 @@ fn main() -> io::Result<()> {
                                 s.direction = SnakeDirection::Left;
                             }
                         }
-                    },
+                    }
                     KeyCode::Right => {
                         if arrow_press == false {
                             arrow_press = true;
@@ -221,7 +239,7 @@ fn main() -> io::Result<()> {
                                 s.direction = SnakeDirection::Right;
                             }
                         }
-                    },
+                    }
                     KeyCode::Up => {
                         if arrow_press == false {
                             arrow_press = true;
@@ -232,7 +250,7 @@ fn main() -> io::Result<()> {
                                 s.direction = SnakeDirection::Up;
                             }
                         }
-                    },
+                    }
                     KeyCode::Down => {
                         if arrow_press == false {
                             arrow_press = true;
@@ -243,7 +261,7 @@ fn main() -> io::Result<()> {
                                 s.direction = SnakeDirection::Down;
                             }
                         }
-                    },
+                    }
                     _ => {}
                 }
             }
@@ -252,7 +270,6 @@ fn main() -> io::Result<()> {
 
     disable_game_mode(&mut stdout)
 }
-
 
 // -- Enable and disable terminal functionalities for the game to work
 
